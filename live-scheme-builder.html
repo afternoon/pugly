@@ -977,7 +977,6 @@
       function register() {
         return evalText(editor.value, true).then(function () {
           say('Registered ' + Object.keys(sources).length + ' component(s).', 'ok');
-          flash();
           refreshTree();
         }).catch(function (e) {
           say(e && e.message ? e.message : String(e), 'err');
