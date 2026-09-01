@@ -1,151 +1,312 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Live Scheme Builder</title>
-<style>
-  :root {
-    --ink:    #14161b;
-    --panel:  #1b1e25;
-    --line:   #2a2f39;
-    --text:   #c6ccd7;
-    --dim:    #6d7788;
-    --brass:  #d8a25c;
-    --jade:   #6ec2a8;
-    --rust:   #d4736a;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    background: var(--ink);
-    color: var(--text);
-    font: 13px/1.55 var(--mono);
-    display: grid;
-    grid-template-rows: auto 1fr;
-    overflow: hidden;
-  }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pugly</title>
+  <style>
+    :root {
+      --ink: #14161b;
+      --panel: #1b1e25;
+      --line: #2a2f39;
+      --text: #c6ccd7;
+      --dim: #6d7788;
+      --brass: #d8a25c;
+      --jade: #6ec2a8;
+      --rust: #d4736a;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    }
 
-  /* ---- header ---- */
-  header {
-    display: flex; align-items: center; gap: 18px;
-    padding: 0 14px; height: 42px;
-    border-bottom: 1px solid var(--line);
-    background: var(--panel);
-  }
-  .wordmark { letter-spacing: .16em; text-transform: uppercase; font-size: 11px; color: var(--dim); }
-  .wordmark b { color: var(--text); font-weight: 600; }
-  /* signature: the parens pulse jade on every successful register */
-  .pulse { color: var(--line); transition: color .12s ease; margin-left: 2px; }
-  .pulse.live { color: var(--jade); }
-  header .spacer { flex: 1; }
-  #status { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #status.ok  { color: var(--jade); }
-  #status.err { color: var(--rust); }
+    * {
+      box-sizing: border-box;
+    }
 
-  button {
-    font: inherit; font-size: 12px;
-    color: var(--text); background: transparent;
-    border: 1px solid var(--line); padding: 3px 11px;
-    cursor: pointer;
-  }
-  button:hover { border-color: var(--brass); color: var(--brass); }
-  button:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
-  button.primary { border-color: var(--brass); color: var(--brass); }
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
 
-  /* ---- panes ---- */
-  #panes { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
-  #right { display: grid; grid-template-rows: 3fr 1fr; min-height: 0; border-left: 1px solid var(--line); }
-  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .pane + .pane { border-top: 1px solid var(--line); }
-  .bar {
-    display: flex; align-items: center; gap: 8px;
-    padding: 5px 10px; border-bottom: 1px solid var(--line);
-    font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
-    flex: none;
-  }
-  .bar .spacer { flex: 1; }
-  .bar button { padding: 1px 9px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+    body {
+      background: var(--ink);
+      color: var(--text);
+      font: 13px/1.55 var(--mono);
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
 
-  #editor {
-    flex: 1; min-height: 0; resize: none; border: 0; outline: 0;
-    padding: 12px 14px; tab-size: 2;
-    background: var(--ink); color: var(--text);
-    font: 13px/1.6 var(--mono);
-  }
+    /* ---- header ---- */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 14px;
+      height: 42px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
 
-  /* the app renders on paper: visually separate from the tool's chrome */
-  #preview { flex: 1; min-height: 0; overflow: auto; background: #fff; color: #111; padding: 14px;
-             font: 14px/1.5 system-ui, -apple-system, sans-serif; }
+    .wordmark {
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: var(--dim);
+    }
 
-  #inspector { flex: 1; min-height: 0; overflow: auto; }
-  #tree { margin: 0; padding: 10px 14px; white-space: pre; color: var(--dim); font: 12px/1.5 var(--mono); }
-  #tree .empty { color: var(--line); }
+    .wordmark b {
+      color: var(--text);
+      font-weight: 600;
+    }
 
-  #replout { padding: 10px 14px; white-space: pre-wrap; word-break: break-word; margin: 0; }
-  #replout .in  { color: var(--dim); }
-  #replout .out { color: var(--text); }
-  #replout .bad { color: var(--rust); }
-  #replform { display: flex; border-top: 1px solid var(--line); flex: none; }
-  #replin {
-    flex: 1; border: 0; outline: 0; padding: 8px 14px;
-    background: var(--ink); color: var(--brass); font: 13px var(--mono);
-  }
-  .tab { cursor: pointer; color: var(--line); letter-spacing: .14em; }
-  .tab.on { color: var(--text); }
-  .hidden { display: none !important; }
+    header .spacer {
+      flex: 1;
+    }
 
-  @media (max-width: 860px) {
-    #panes { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-    #right { border-left: 0; border-top: 1px solid var(--line); }
-  }
-  @media (prefers-reduced-motion: reduce) { .pulse { transition: none; } }
-</style>
+    #status {
+      color: var(--dim);
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #status.ok {
+      color: var(--jade);
+    }
+
+    #status.err {
+      color: var(--rust);
+    }
+
+    button {
+      font: inherit;
+      font-size: 12px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--line);
+      padding: 3px 11px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--brass);
+      color: var(--brass);
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--brass);
+      outline-offset: 1px;
+    }
+
+    button.primary {
+      border-color: var(--brass);
+      color: var(--brass);
+    }
+
+    /* ---- panes ---- */
+    #panes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 0;
+    }
+
+    #right {
+      display: grid;
+      grid-template-rows: 3fr 1fr;
+      min-height: 0;
+      border-left: 1px solid var(--line);
+    }
+
+    .pane {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .pane+.pane {
+      border-top: 1px solid var(--line);
+    }
+
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--line);
+      font-size: 10px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--dim);
+      flex: none;
+    }
+
+    .bar .spacer {
+      flex: 1;
+    }
+
+    .bar button {
+      padding: 1px 9px;
+      font-size: 11px;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    #editor {
+      flex: 1;
+      min-height: 0;
+      resize: none;
+      border: 0;
+      outline: 0;
+      padding: 12px 14px;
+      tab-size: 2;
+      background: var(--ink);
+      color: var(--text);
+      font: 13px/1.6 var(--mono);
+    }
+
+    /* the app renders on paper: visually separate from the tool's chrome */
+    #preview {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      background: #fff;
+      color: #111;
+      padding: 14px;
+      font: 14px/1.5 system-ui, -apple-system, sans-serif;
+    }
+
+    #inspector {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    #tree {
+      margin: 0;
+      padding: 10px 14px;
+      white-space: pre;
+      color: var(--dim);
+      font: 12px/1.5 var(--mono);
+    }
+
+    #tree .empty {
+      color: var(--line);
+    }
+
+    #replout {
+      padding: 10px 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+    }
+
+    #replout .in {
+      color: var(--dim);
+    }
+
+    #replout .out {
+      color: var(--text);
+    }
+
+    #replout .bad {
+      color: var(--rust);
+    }
+
+    #replform {
+      display: flex;
+      border-top: 1px solid var(--line);
+      flex: none;
+    }
+
+    #replin {
+      flex: 1;
+      border: 0;
+      outline: 0;
+      padding: 8px 14px;
+      background: var(--ink);
+      color: var(--brass);
+      font: 13px var(--mono);
+    }
+
+    .tab {
+      cursor: pointer;
+      color: var(--line);
+      letter-spacing: .14em;
+    }
+
+    .tab.on {
+      color: var(--text);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 860px) {
+      #panes {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+      }
+
+      #right {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<header>
-  <span class="wordmark"><b>Live Scheme</b> builder<span class="pulse" id="pulse">( )</span></span>
-  <button id="dump">Dump</button>
-  <span class="spacer"></span>
-  <span id="status">Loading LIPS&hellip;</span>
-</header>
+  <header>
+    <span class="wordmark"><b>Pugly</b></span>
+    <button id="dump">Dump</button>
+    <span class="spacer"></span>
+    <span id="status">Loading LIPS&hellip;</span>
+  </header>
 
-<div id="panes">
-  <div class="pane">
-    <div class="bar">
-      <span>Definitions</span>
-      <span class="spacer"></span>
-      <button class="primary" id="register">Register &nbsp;&#8984;&#9166;</button>
-    </div>
-    <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
-  </div>
-
-  <div id="right">
-    <div class="pane">
-      <div class="bar"><span>Preview</span></div>
-      <div id="preview"></div>
-    </div>
+  <div id="panes">
     <div class="pane">
       <div class="bar">
-        <span class="tab on" id="tab-tree">Tree</span>
-        <span class="tab" id="tab-repl">REPL</span>
+        <span>Definitions</span>
         <span class="spacer"></span>
-        <button id="refresh">Refresh</button>
+        <button class="primary" id="register">Register &nbsp;&#8984;&#9166;</button>
       </div>
-      <div id="inspector"><pre id="tree"><span class="empty">Refresh to read the owner tree.</span></pre></div>
-      <div id="replpane" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
-        <div style="flex:1;min-height:0;overflow:auto"><pre id="replout"></pre></div>
-        <div id="replform"><input id="replin" spellcheck="false" autocomplete="off" placeholder="(state '(counter n) 0)"></div>
+      <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+    </div>
+
+    <div id="right">
+      <div class="pane">
+        <div class="bar"><span>Preview</span></div>
+        <div id="preview"></div>
+      </div>
+      <div class="pane">
+        <div class="bar">
+          <span class="tab on" id="tab-tree">Tree</span>
+          <span class="tab" id="tab-repl">REPL</span>
+          <span class="spacer"></span>
+          <button id="refresh">Refresh</button>
+        </div>
+        <div id="inspector">
+          <pre id="tree"><span class="empty">Refresh to read the owner tree.</span></pre>
+        </div>
+        <div id="replpane" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+          <div style="flex:1;min-height:0;overflow:auto">
+            <pre id="replout"></pre>
+          </div>
+          <div id="replform"><input id="replin" spellcheck="false" autocomplete="off"
+              placeholder="(state '(counter n) 0)"></div>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- Framework source. Inert type: the browser ignores these, the shell below
+  <!-- Framework source. Inert type: the browser ignores these, the shell below
      reads their textContent and evaluates them in document order. -->
-<script type="text/scheme" data-name="core.scm">
+  <script type="text/scheme" data-name="core.scm">
 ;;; core.scm --- fine-grained reactive core
 ;;; track / mark / propagate with two-colour marking and paired slot arrays.
 
@@ -443,7 +604,7 @@
         res))))
 
 </script>
-<script type="text/scheme" data-name="dom.scm">
+  <script type="text/scheme" data-name="dom.scm">
 ;;; dom.scm --- thin Scheme wrappers over the JS DOM shim.
 ;;; The shim (see host JS) does the string coercion, because LIPS strings are
 ;;; boxed objects and the DOM needs primitives.
@@ -472,7 +633,7 @@
         (else (repr v))))
 
 </script>
-<script type="text/scheme" data-name="app.scm">
+  <script type="text/scheme" data-name="app.scm">
 ;;; app.scm --- external state store + component cells and stubs.
 
 ;; --- external keyed store ---------------------------------------------------
@@ -542,7 +703,7 @@
 (define (ensure-component! name) (component-cell name) #t)
 
 </script>
-<script type="text/scheme" data-name="render.scm">
+  <script type="text/scheme" data-name="render.scm">
 ;;; render.scm --- SXML -> DOM, fine grained.
 
 (define-record-type each-node
@@ -724,176 +885,172 @@
 
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/lips@1.0.0-beta.20/dist/lips.min.js"></script>
-<script>
-(function () {
-  var editor   = document.getElementById('editor');
-  var preview  = document.getElementById('preview');
-  var statusEl = document.getElementById('status');
-  var pulse    = document.getElementById('pulse');
-  var treeEl   = document.getElementById('tree');
-  var replOut  = document.getElementById('replout');
-  var replIn   = document.getElementById('replin');
+  <script src="https://cdn.jsdelivr.net/npm/lips@1.0.0-beta.20/dist/lips.min.js"></script>
+  <script>
+    (function () {
+      var editor = document.getElementById('editor');
+      var preview = document.getElementById('preview');
+      var statusEl = document.getElementById('status');
+      var treeEl = document.getElementById('tree');
+      var replOut = document.getElementById('replout');
+      var replIn = document.getElementById('replin');
 
-  editor.value = "(define-component! 'main\n  (lambda ()\n    `(div \"hello\")))\n";
+      editor.value = "(define-component! 'main\n  (lambda ()\n    `(div \"hello\")))\n";
 
-  function say(msg, kind) {
-    statusEl.textContent = msg;
-    statusEl.className = kind || '';
-  }
-  function flash() {
-    pulse.classList.add('live');
-    setTimeout(function () { pulse.classList.remove('live'); }, 220);
-  }
+      function say(msg, kind) {
+        statusEl.textContent = msg;
+        statusEl.className = kind || '';
+      }
 
-  // ---- DOM shim -----------------------------------------------------------
-  // LIPS strings are boxed objects, so every string crossing into the DOM is
-  // coerced here. This is the only host-specific surface.
-  var S = function (x) { return (x === null || x === undefined) ? '' : String(x); };
-  var shim = {
-    'js-create':        function (t) { return document.createElement(S(t)); },
-    'js-text':          function (s) { return document.createTextNode(S(s)); },
-    'js-fragment':      function () { return document.createDocumentFragment(); },
-    'js-append':        function (p, c) { p.appendChild(c); return c; },
-    'js-insert-before': function (p, n, r) { p.insertBefore(n, r); return n; },
-    'js-parent':        function (n) { return n.parentNode; },
-    'js-set-text':      function (n, s) { n.textContent = S(s); return n; },
-    'js-set-attr':      function (n, k, v) { n.setAttribute(S(k), S(v)); return n; },
-    'js-on':            function (n, ev, h) { n.addEventListener(S(ev), h); return n; },
-    'js-clear':         function (n) { while (n.firstChild) n.removeChild(n.firstChild); return n; },
-    'js-children':      function (n) { return Array.from(n.childNodes); },
-    'js-remove-nodes':  function (a) { for (var i = 0; i < a.length; i++) if (a[i].parentNode) a[i].parentNode.removeChild(a[i]); },
-    'js-insert-nodes':  function (p, a, r) { for (var i = 0; i < a.length; i++) p.insertBefore(a[i], r); },
-    // Synchronous try/catch. LIPS 'guard' compiles to 'try', which always
-    // returns a Promise and would make propagation asynchronous.
-    'js-try':           function (thunk, onError) { try { return thunk(); } catch (e) { return onError(e); } },
-    'js-error-message': function (e) { return S(e && e.message ? e.message : e); }
-  };
+      // ---- DOM shim -----------------------------------------------------------
+      // LIPS strings are boxed objects, so every string crossing into the DOM is
+      // coerced here. This is the only host-specific surface.
+      var S = function (x) {return (x === null || x === undefined) ? '' : String(x);};
+      var shim = {
+        'js-create': function (t) {return document.createElement(S(t));},
+        'js-text': function (s) {return document.createTextNode(S(s));},
+        'js-fragment': function () {return document.createDocumentFragment();},
+        'js-append': function (p, c) {p.appendChild(c); return c;},
+        'js-insert-before': function (p, n, r) {p.insertBefore(n, r); return n;},
+        'js-parent': function (n) {return n.parentNode;},
+        'js-set-text': function (n, s) {n.textContent = S(s); return n;},
+        'js-set-attr': function (n, k, v) {n.setAttribute(S(k), S(v)); return n;},
+        'js-on': function (n, ev, h) {n.addEventListener(S(ev), h); return n;},
+        'js-clear': function (n) {while (n.firstChild) n.removeChild(n.firstChild); return n;},
+        'js-children': function (n) {return Array.from(n.childNodes);},
+        'js-remove-nodes': function (a) {for (var i = 0; i < a.length; i++) if (a[i].parentNode) a[i].parentNode.removeChild(a[i]);},
+        'js-insert-nodes': function (p, a, r) {for (var i = 0; i < a.length; i++) p.insertBefore(a[i], r);},
+        // Synchronous try/catch. LIPS 'guard' compiles to 'try', which always
+        // returns a Promise and would make propagation asynchronous.
+        'js-try': function (thunk, onError) {try {return thunk();} catch (e) {return onError(e);} },
+        'js-error-message': function (e) {return S(e && e.message ? e.message : e);}
+      };
 
-  var appEnv = null;
-  var sources = {};   // component name -> source text, for Dump
+      var appEnv = null;
+      var sources = {};   // component name -> source text, for Dump
 
-  function evalOne(form) { return lips.exec(form, { env: appEnv, dynamic_env: appEnv }); }
+      function evalOne(form) {return lips.exec(form, {env: appEnv, dynamic_env: appEnv});}
 
-  function evalText(text, record) {
-    return lips.parse(text, appEnv).then(function (forms) {
-      var chain = Promise.resolve([]);
-      forms.forEach(function (form) {
-        chain = chain.then(function (acc) {
-          if (record) {
-            var src = String(form);
-            var m = src.match(/^\(define-component!\s+'([^\s)]+)/);
-            if (m) sources[m[1]] = src;
-          }
-          return evalOne(form).then(function (r) { return acc.concat([r]); });
+      function evalText(text, record) {
+        return lips.parse(text, appEnv).then(function (forms) {
+          var chain = Promise.resolve([]);
+          forms.forEach(function (form) {
+            chain = chain.then(function (acc) {
+              if (record) {
+                var src = String(form);
+                var m = src.match(/^\(define-component!\s+'([^\s)]+)/);
+                if (m) sources[m[1]] = src;
+              }
+              return evalOne(form).then(function (r) {return acc.concat([r]);});
+            });
+          });
+          return chain;
+        });
+      }
+
+      // ---- boot ---------------------------------------------------------------
+      // Explicit ordering: framework source, then the app environment, then the
+      // mount, then the controls.
+      lips.bootstrap().then(function () {
+        appEnv = lips.env.inherit('app', shim);
+        var blocks = Array.prototype.slice.call(
+          document.querySelectorAll('script[type="text/scheme"]'));
+        return blocks.reduce(function (p, b) {
+          return p.then(function () {
+            return lips.exec(b.textContent, {env: appEnv, dynamic_env: appEnv});
+          });
+        }, Promise.resolve());
+      }).then(function () {
+        return lips.exec('(set-app-env! (current-environment))', {env: appEnv, dynamic_env: appEnv});
+      }).then(function () {
+        appEnv.set('preview-root', preview);
+        return lips.exec('(mount! preview-root)', {env: appEnv, dynamic_env: appEnv});
+      }).then(function () {
+        say('Ready. Edit main, then Register.', 'ok');
+        return register();
+      }).catch(function (e) {
+        say('Boot failed: ' + (e && e.message ? e.message : e), 'err');
+        if (window.console) console.error(e);
+      });
+
+      // ---- controls -----------------------------------------------------------
+      function register() {
+        return evalText(editor.value, true).then(function () {
+          say('Registered ' + Object.keys(sources).length + ' component(s).', 'ok');
+          flash();
+          refreshTree();
+        }).catch(function (e) {
+          say(e && e.message ? e.message : String(e), 'err');
+          if (window.console) console.error(e);
+        });
+      }
+
+      document.getElementById('register').addEventListener('click', register);
+
+      editor.addEventListener('keydown', function (e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {e.preventDefault(); register();}
+      });
+
+      document.getElementById('dump').addEventListener('click', function () {
+        var names = Object.keys(sources);
+        if (!names.length) {say('Nothing registered yet.', 'err'); return;}
+        editor.value = names.map(function (n) {return sources[n];}).join('\n\n') + '\n';
+        editor.focus();
+        say('Dumped ' + names.length + ' definition(s) into the editor.', 'ok');
+      });
+
+      function refreshTree() {
+        return lips.exec('(inspect-text)', {env: appEnv, dynamic_env: appEnv})
+          .then(function (r) {
+            var txt = String(r[r.length - 1] || '').trim();
+            treeEl.textContent = txt || 'empty';
+          })
+          .catch(function (e) {treeEl.textContent = String(e && e.message || e);});
+      }
+      // ---- inspector tabs -----------------------------------------------------
+      var tabTree = document.getElementById('tab-tree');
+      var tabRepl = document.getElementById('tab-repl');
+      var treePane = document.getElementById('inspector');
+      var replPane = document.getElementById('replpane');
+
+      document.getElementById('refresh').addEventListener('click', function () {
+        if (replPane.classList.contains('hidden')) refreshTree(); else replIn.focus();
+      });
+      function showTab(which) {
+        var isTree = which === 'tree';
+        tabTree.classList.toggle('on', isTree);
+        tabRepl.classList.toggle('on', !isTree);
+        treePane.classList.toggle('hidden', !isTree);
+        replPane.classList.toggle('hidden', isTree);
+        if (!isTree) replIn.focus();
+      }
+      tabTree.addEventListener('click', function () {showTab('tree');});
+      tabRepl.addEventListener('click', function () {showTab('repl');});
+
+      // ---- repl ---------------------------------------------------------------
+      function print(cls, text) {
+        var line = document.createElement('div');
+        line.className = cls;
+        line.textContent = text;
+        replOut.appendChild(line);
+        replOut.parentNode.scrollTop = replOut.parentNode.scrollHeight;
+      }
+      replIn.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        var src = replIn.value.trim();
+        if (!src) return;
+        replIn.value = '';
+        print('in', '> ' + src);
+        evalText(src, true).then(function (results) {
+          var last = results[results.length - 1];
+          print('out', last === undefined ? '#void' : String(last));
+          refreshTree();
+        }).catch(function (err) {
+          print('bad', String(err && err.message ? err.message : err));
         });
       });
-      return chain;
-    });
-  }
-
-  // ---- boot ---------------------------------------------------------------
-  // Explicit ordering: framework source, then the app environment, then the
-  // mount, then the controls.
-  lips.bootstrap().then(function () {
-    appEnv = lips.env.inherit('app', shim);
-    var blocks = Array.prototype.slice.call(
-      document.querySelectorAll('script[type="text/scheme"]'));
-    return blocks.reduce(function (p, b) {
-      return p.then(function () {
-        return lips.exec(b.textContent, { env: appEnv, dynamic_env: appEnv });
-      });
-    }, Promise.resolve());
-  }).then(function () {
-    return lips.exec('(set-app-env! (current-environment))', { env: appEnv, dynamic_env: appEnv });
-  }).then(function () {
-    appEnv.set('preview-root', preview);
-    return lips.exec('(mount! preview-root)', { env: appEnv, dynamic_env: appEnv });
-  }).then(function () {
-    say('Ready. Edit main, then Register.', 'ok');
-    return register();
-  }).catch(function (e) {
-    say('Boot failed: ' + (e && e.message ? e.message : e), 'err');
-    if (window.console) console.error(e);
-  });
-
-  // ---- controls -----------------------------------------------------------
-  function register() {
-    return evalText(editor.value, true).then(function () {
-      say('Registered ' + Object.keys(sources).length + ' component(s).', 'ok');
-      flash();
-      refreshTree();
-    }).catch(function (e) {
-      say(e && e.message ? e.message : String(e), 'err');
-      if (window.console) console.error(e);
-    });
-  }
-
-  document.getElementById('register').addEventListener('click', register);
-
-  editor.addEventListener('keydown', function (e) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); register(); }
-  });
-
-  document.getElementById('dump').addEventListener('click', function () {
-    var names = Object.keys(sources);
-    if (!names.length) { say('Nothing registered yet.', 'err'); return; }
-    editor.value = names.map(function (n) { return sources[n]; }).join('\n\n') + '\n';
-    editor.focus();
-    say('Dumped ' + names.length + ' definition(s) into the editor.', 'ok');
-  });
-
-  function refreshTree() {
-    return lips.exec('(inspect-text)', { env: appEnv, dynamic_env: appEnv })
-      .then(function (r) {
-        var txt = String(r[r.length - 1] || '').trim();
-        treeEl.textContent = txt || 'empty';
-      })
-      .catch(function (e) { treeEl.textContent = String(e && e.message || e); });
-  }
-  // ---- inspector tabs -----------------------------------------------------
-  var tabTree  = document.getElementById('tab-tree');
-  var tabRepl  = document.getElementById('tab-repl');
-  var treePane = document.getElementById('inspector');
-  var replPane = document.getElementById('replpane');
-
-  document.getElementById('refresh').addEventListener('click', function () {
-    if (replPane.classList.contains('hidden')) refreshTree(); else replIn.focus();
-  });
-  function showTab(which) {
-    var isTree = which === 'tree';
-    tabTree.classList.toggle('on', isTree);
-    tabRepl.classList.toggle('on', !isTree);
-    treePane.classList.toggle('hidden', !isTree);
-    replPane.classList.toggle('hidden', isTree);
-    if (!isTree) replIn.focus();
-  }
-  tabTree.addEventListener('click', function () { showTab('tree'); });
-  tabRepl.addEventListener('click', function () { showTab('repl'); });
-
-  // ---- repl ---------------------------------------------------------------
-  function print(cls, text) {
-    var line = document.createElement('div');
-    line.className = cls;
-    line.textContent = text;
-    replOut.appendChild(line);
-    replOut.parentNode.scrollTop = replOut.parentNode.scrollHeight;
-  }
-  replIn.addEventListener('keydown', function (e) {
-    if (e.key !== 'Enter') return;
-    var src = replIn.value.trim();
-    if (!src) return;
-    replIn.value = '';
-    print('in', '> ' + src);
-    evalText(src, true).then(function (results) {
-      var last = results[results.length - 1];
-      print('out', last === undefined ? '#void' : String(last));
-      refreshTree();
-    }).catch(function (err) {
-      print('bad', String(err && err.message ? err.message : err));
-    });
-  });
-})();
-</script>
+    })();
+  </script>
 </body>
+
 </html>
