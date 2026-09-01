@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Scheme Builder</title>
+<style>
+  :root {
+    --ink:    #14161b;
+    --panel:  #1b1e25;
+    --line:   #2a2f39;
+    --text:   #c6ccd7;
+    --dim:    #6d7788;
+    --brass:  #d8a25c;
+    --jade:   #6ec2a8;
+    --rust:   #d4736a;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font: 13px/1.55 var(--mono);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+  }
+
+  /* ---- header ---- */
+  header {
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 14px; height: 42px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .wordmark { letter-spacing: .16em; text-transform: uppercase; font-size: 11px; color: var(--dim); }
+  .wordmark b { color: var(--text); font-weight: 600; }
+  /* signature: the parens pulse jade on every successful register */
+  .pulse { color: var(--line); transition: color .12s ease; margin-left: 2px; }
+  .pulse.live { color: var(--jade); }
+  header .spacer { flex: 1; }
+  #status { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status.ok  { color: var(--jade); }
+  #status.err { color: var(--rust); }
+
+  button {
+    font: inherit; font-size: 12px;
+    color: var(--text); background: transparent;
+    border: 1px solid var(--line); padding: 3px 11px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--brass); color: var(--brass); }
+  button:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+  button.primary { border-color: var(--brass); color: var(--brass); }
+
+  /* ---- panes ---- */
+  #panes { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  #right { display: grid; grid-template-rows: 3fr 1fr; min-height: 0; border-left: 1px solid var(--line); }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pane + .pane { border-top: 1px solid var(--line); }
+  .bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; border-bottom: 1px solid var(--line);
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+    flex: none;
+  }
+  .bar .spacer { flex: 1; }
+  .bar button { padding: 1px 9px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+
+  #editor {
+    flex: 1; min-height: 0; resize: none; border: 0; outline: 0;
+    padding: 12px 14px; tab-size: 2;
+    background: var(--ink); color: var(--text);
+    font: 13px/1.6 var(--mono);
+  }
+
+  /* the app renders on paper: visually separate from the tool's chrome */
+  #preview { flex: 1; min-height: 0; overflow: auto; background: #fff; color: #111; padding: 14px;
+             font: 14px/1.5 system-ui, -apple-system, sans-serif; }
+
+  #inspector { flex: 1; min-height: 0; overflow: auto; }
+  #tree { margin: 0; padding: 10px 14px; white-space: pre; color: var(--dim); font: 12px/1.5 var(--mono); }
+  #tree .empty { color: var(--line); }
+
+  #replout { padding: 10px 14px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  #replout .in  { color: var(--dim); }
+  #replout .out { color: var(--text); }
+  #replout .bad { color: var(--rust); }
+  #replform { display: flex; border-top: 1px solid var(--line); flex: none; }
+  #replin {
+    flex: 1; border: 0; outline: 0; padding: 8px 14px;
+    background: var(--ink); color: var(--brass); font: 13px var(--mono);
+  }
+  .tab { cursor: pointer; color: var(--line); letter-spacing: .14em; }
+  .tab.on { color: var(--text); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 860px) {
+    #panes { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    #right { border-left: 0; border-top: 1px solid var(--line); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pulse { transition: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="wordmark"><b>Live Scheme</b> builder<span class="pulse" id="pulse">( )</span></span>
+  <button id="dump">Dump</button>
+  <span class="spacer"></span>
+  <span id="status">Loading LIPS&hellip;</span>
+</header>
+
+<div id="panes">
+  <div class="pane">
+    <div class="bar">
+      <span>Definitions</span>
+      <span class="spacer"></span>
+      <button class="primary" id="register">Register &nbsp;&#8984;&#9166;</button>
+    </div>
+    <textarea id="editor" spellcheck="false" autocomplete="off"></textarea>
+  </div>
+
+  <div id="right">
+    <div class="pane">
+      <div class="bar"><span>Preview</span></div>
+      <div id="preview"></div>
+    </div>
+    <div class="pane">
+      <div class="bar">
+        <span class="tab on" id="tab-tree">Tree</span>
+        <span class="tab" id="tab-repl">REPL</span>
+        <span class="spacer"></span>
+        <button id="refresh">Refresh</button>
+      </div>
+      <div id="inspector"><pre id="tree"><span class="empty">Refresh to read the owner tree.</span></pre></div>
+      <div id="replpane" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <div style="flex:1;min-height:0;overflow:auto"><pre id="replout"></pre></div>
+        <div id="replform"><input id="replin" spellcheck="false" autocomplete="off" placeholder="(state '(counter n) 0)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Framework source. Inert type: the browser ignores these, the shell below
+     reads their textContent and evaluates them in document order. -->
+<script type="text/scheme" data-name="core.scm">
+;;; core.scm --- fine-grained reactive core
+;;; track / mark / propagate with two-colour marking and paired slot arrays.
+
+(define CLEAN 0)
+(define STALE 1)
+(define PENDING 2)
+
+(define KIND-SIGNAL 0)
+(define KIND-MEMO 1)
+(define KIND-EFFECT 2)
+
+;; One record serves signals, memos and effects so that linking code does not
+;; need to dispatch on type. Numbers, not symbols: symbol identity through
+;; record fields is not reliable here.
+(define-record-type node
+  (make-node kind fn value state sources source-slots observers observer-slots
+             owner children cleanups err updated-at)
+  node?
+  (kind node-kind)
+  (fn node-fn set-node-fn!)
+  (value node-value set-node-value!)
+  (state node-state set-node-state!)
+  (sources node-sources)
+  (source-slots node-source-slots)
+  (observers node-observers)
+  (observer-slots node-observer-slots)
+  (owner node-owner set-node-owner!)
+  (children node-children)
+  (cleanups node-cleanups)
+  (err node-err set-node-err!)
+  (updated-at node-updated-at set-node-updated-at!))
+
+;; --- growable arrays (JS arrays underneath) ---------------------------------
+(define (av) (vector))
+(define (av-push! a x) (--> a (push x)))
+(define (av-pop! a) (--> a (pop)))
+(define (av-len a) (vector-length a))
+(define (av-ref a i) (vector-ref a i))
+(define (av-set! a i v) (vector-set! a i v))
+(define (av-clear! a) (set-obj! a 'length 0))
+
+;; --- globals ----------------------------------------------------------------
+(define *listener* #f)
+(define *owner* #f)
+(define *updates* #f)
+(define *effects* #f)
+(define *exec-count* 0)
+
+(define (pure? n) (= (node-kind n) KIND-MEMO))
+(define (computation? n) (not (= (node-kind n) KIND-SIGNAL)))
+
+(define (new-signal v)
+  (make-node KIND-SIGNAL #f v CLEAN (av) (av) (av) (av) #f (av) (av) #f 0))
+
+(define (new-computation kind fn)
+  (let ((n (make-node kind fn #f STALE (av) (av) (av) (av)
+                      *owner* (av) (av) #f 0)))
+    (when *owner* (av-push! (node-children *owner*) n))
+    n))
+
+;; --- tracking ---------------------------------------------------------------
+(define (link! source obs)
+  (let ((s-len (av-len (node-observers source)))
+        (o-len (av-len (node-sources obs))))
+    (av-push! (node-sources obs) source)
+    (av-push! (node-source-slots obs) s-len)
+    (av-push! (node-observers source) obs)
+    (av-push! (node-observer-slots source) o-len)))
+
+(define (read-node n)
+  (when (and (computation? n) (not (= (node-state n) CLEAN)))
+    (if (= (node-state n) STALE)
+        (update-computation n)
+        (let ((saved *updates*))
+          (set! *updates* #f)
+          (run-updates (lambda () (look-upstream n #f)) #f)
+          (set! *updates* saved))))
+  (when *listener* (link! n *listener*))
+  (node-value n))
+
+;; --- writing ----------------------------------------------------------------
+(define (write-node! n v)
+  (if (equal? (node-value n) v)
+      v
+      (begin
+        (set-node-value! n v)
+        (when (> (av-len (node-observers n)) 0)
+          (run-updates
+           (lambda ()
+             (let loop ((i 0))
+               (when (< i (av-len (node-observers n)))
+                 (let ((o (av-ref (node-observers n) i)))
+                   (unless (= (node-state o) STALE)
+                     (queue-node! o)
+                     (when (> (av-len (node-observers o)) 0) (mark-downstream o))
+                     (set-node-state! o STALE)))
+                 (loop (+ i 1)))))
+           #f))
+        v)))
+
+(define (queue-node! o)
+  (if (pure? o)
+      (when *updates* (av-push! *updates* o))
+      (when *effects* (av-push! *effects* o))))
+
+(define (mark-downstream n)
+  (let loop ((i 0))
+    (when (< i (av-len (node-observers n)))
+      (let ((o (av-ref (node-observers n) i)))
+        (when (= (node-state o) CLEAN)
+          (set-node-state! o PENDING)
+          (queue-node! o)
+          (when (> (av-len (node-observers o)) 0) (mark-downstream o))))
+      (loop (+ i 1)))))
+
+;; --- propagation ------------------------------------------------------------
+(define (run-updates fn init)
+  (if *updates*
+      (fn)
+      (let ((wait #f))
+        (unless init (set! *updates* (av)))
+        (if *effects* (set! wait #t) (set! *effects* (av)))
+        (set! *exec-count* (+ *exec-count* 1))
+        (let ((res (fn)))
+          (complete-updates wait)
+          res))))
+
+(define (complete-updates wait)
+  (when *updates*
+    (run-queue *updates*)
+    (set! *updates* #f))
+  (unless wait
+    (let ((e *effects*))
+      (set! *effects* #f)
+      (when (and e (> (av-len e) 0))
+        (run-updates (lambda () (run-effects e)) #f)))))
+
+(define (run-queue q)
+  (let loop ((i 0))
+    (when (< i (av-len q))
+      (run-top (av-ref q i))
+      (loop (+ i 1)))))
+
+(define (run-effects e)
+  (let loop ((i 0))
+    (when (< i (av-len e))
+      (run-top (av-ref e i))
+      (loop (+ i 1)))))
+
+;; Climb the OWNER chain (not the dependency chain): a parent about to re-run
+;; will dispose and recreate its children, so settle outermost first.
+(define (run-top n)
+  (cond
+   ((= (node-state n) CLEAN) #f)
+   ((= (node-state n) PENDING) (look-upstream n #f))
+   (else
+    (let ((ancestors (av)))
+      (av-push! ancestors n)
+      (let climb ((c (node-owner n)))
+        (when (and c (< (node-updated-at c) *exec-count*))
+          (when (not (= (node-state c) CLEAN)) (av-push! ancestors c))
+          (climb (node-owner c))))
+      (let loop ((i (- (av-len ancestors) 1)))
+        (when (>= i 0)
+          (let ((c (av-ref ancestors i)))
+            (cond
+             ((= (node-state c) STALE) (update-computation c))
+             ((= (node-state c) PENDING)
+              (look-upstream c (av-ref ancestors 0)))
+             (else #f)))
+          (loop (- i 1))))))))
+
+;; Optimistically clean, settle every dirty source; if one of them writes a new
+;; value it will mark us STALE again on the way through and we recompute.
+(define (look-upstream n ignore)
+  (set-node-state! n CLEAN)
+  (let loop ((i 0))
+    (when (< i (av-len (node-sources n)))
+      (let ((s (av-ref (node-sources n) i)))
+        (when (computation? s)
+          (cond
+           ((= (node-state s) STALE)
+            (when (and (not (eq? s ignore)) (< (node-updated-at s) *exec-count*))
+              (run-top s)))
+           ((= (node-state s) PENDING) (look-upstream s ignore))
+           (else #f))))
+      (loop (+ i 1)))))
+
+(define (update-computation n)
+  (when (node-fn n)
+    (clean-node n)
+    (let ((time *exec-count*)
+          (prev-listener *listener*)
+          (prev-owner *owner*))
+      (set! *listener* n)
+      (set! *owner* n)
+      (run-computation n time)
+      (set! *listener* prev-listener)
+      (set! *owner* prev-owner))))
+
+;; Per-effect error isolation: a thrown error marks this node and is reported,
+;; but the queue keeps draining so the rest of the app stays live.
+(define (run-computation n time)
+  ;; NOT `guard`: LIPS compiles guard to try, which always returns a Promise
+  ;; and would make propagation asynchronous. js-try is a real synchronous
+  ;; try/catch in the host shim.
+  (let ((next (js-try
+               (lambda ()
+                 (set-node-err! n #f)
+                 ((node-fn n) (node-value n)))
+               (lambda (e)
+                 (set-node-err! n (js-error-message e))
+                 (report-node-error n e)
+                 'error))))
+    (when (<= (node-updated-at n) time)
+      (if (pure? n)
+          (write-node! n next)
+          (set-node-value! n next))
+      (set-node-updated-at! n time))))
+
+;; replaced by the renderer so errors can be shown in place
+(define *error-reporter* (lambda (n e) #f))
+(define (report-node-error n e) (*error-reporter* n e))
+(define (set-error-reporter! f) (set! *error-reporter* f))
+
+(define (clean-node n)
+  (let loop ()
+    (when (> (av-len (node-sources n)) 0)
+      (let* ((source (av-pop! (node-sources n)))
+             (index (av-pop! (node-source-slots n)))
+             (obs (node-observers source)))
+        (when (> (av-len obs) 0)
+          ;; swap-remove using the paired slot index: O(1), no scan
+          (let ((last (av-pop! obs))
+                (slot (av-pop! (node-observer-slots source))))
+            (when (< index (av-len obs))
+              (av-set! (node-source-slots last) slot index)
+              (av-set! obs index last)
+              (av-set! (node-observer-slots source) index slot)))))
+      (loop)))
+  (let loop ((i (- (av-len (node-children n)) 1)))
+    (when (>= i 0)
+      (clean-node (av-ref (node-children n) i))
+      (loop (- i 1))))
+  (av-clear! (node-children n))
+  (let loop ((i 0))
+    (when (< i (av-len (node-cleanups n)))
+      ((av-ref (node-cleanups n) i))
+      (loop (+ i 1))))
+  (av-clear! (node-cleanups n))
+  (set-node-state! n CLEAN))
+
+;; --- public API -------------------------------------------------------------
+(define (signal init)
+  (let ((n (new-signal init)))
+    (cons (lambda () (read-node n))
+          (lambda (v) (run-updates (lambda () (write-node! n v)) #f)))))
+
+(define (memo fn)
+  (let ((n (new-computation KIND-MEMO (lambda (prev) (fn)))))
+    (update-computation n)
+    (lambda () (read-node n))))
+
+(define (effect fn)
+  (let ((n (new-computation KIND-EFFECT (lambda (prev) (fn)))))
+    (if *effects*
+        (av-push! *effects* n)
+        (run-updates (lambda () (update-computation n)) #f))
+    n))
+
+(define (batch fn) (run-updates fn #f))
+
+(define (on-cleanup! fn)
+  (when *owner* (av-push! (node-cleanups *owner*) fn)))
+
+;; Like root, but not registered as a child of the current owner: used for
+;; keyed list rows, which must survive their parent effect re-running.
+(define (detached-root fn)
+  (let ((prev-owner *owner*))
+    (set! *owner* #f)
+    (let ((res (root fn)))
+      (set! *owner* prev-owner)
+      res)))
+
+(define (root fn)
+  (let ((n (new-computation KIND-EFFECT #f)))
+    (set-node-state! n CLEAN)
+    (set-node-updated-at! n *exec-count*)
+    (let ((prev-owner *owner*) (prev-listener *listener*))
+      (set! *owner* n)
+      (set! *listener* #f)
+      (let ((res (fn n)))
+        (set! *owner* prev-owner)
+        (set! *listener* prev-listener)
+        res))))
+
+</script>
+<script type="text/scheme" data-name="dom.scm">
+;;; dom.scm --- thin Scheme wrappers over the JS DOM shim.
+;;; The shim (see host JS) does the string coercion, because LIPS strings are
+;;; boxed objects and the DOM needs primitives.
+
+(define (dom-create tag) (js-create tag))
+(define (dom-text s) (js-text s))
+(define (dom-fragment) (js-fragment))
+(define (dom-append parent child) (js-append parent child))
+(define (dom-insert-before parent node ref) (js-insert-before parent node ref))
+(define (dom-parent node) (js-parent node))
+(define (dom-set-text! node s) (js-set-text node s))
+(define (dom-set-attr! node name value) (js-set-attr node name value))
+(define (dom-on! node event handler) (js-on node event handler))
+(define (dom-clear! node) (js-clear node))
+(define (dom-children-array node) (js-children node))
+(define (dom-remove-nodes! nodes) (js-remove-nodes nodes))
+(define (dom-insert-nodes-before! parent nodes ref)
+  (js-insert-nodes parent nodes ref))
+
+(define (->text v)
+  (cond ((string? v) v)
+        ((number? v) (number->string v))
+        ((eq? v #t) "#t")
+        ((eq? v #f) "")
+        ((null? v) "")
+        (else (repr v))))
+
+</script>
+<script type="text/scheme" data-name="app.scm">
+;;; app.scm --- external state store + component cells and stubs.
+
+;; --- external keyed store ---------------------------------------------------
+;; State lives here, never inside a component instance, so redefining a
+;; component preserves its state for free.
+
+(define *store* (new Map))
+
+(define (store-key key) (repr key #t))
+
+(define (state-cell key default)
+  (let ((k (store-key key)))
+    (if (--> *store* (has k))
+        (--> *store* (get k))
+        (let ((c (signal default)))
+          (--> *store* (set k c))
+          c))))
+
+(define (state key default) (car (state-cell key default)))
+
+(define (state-set! key value)
+  ((cdr (state-cell key value)) value))
+
+(define (store-keys) (--> Array (from (--> *store* (keys)))))
+
+;; --- component registry -----------------------------------------------------
+;; Each component name owns a signal holding its definition. Calling the stub
+;; reads that cell, so instances subscribe and a redefinition is an ordinary
+;; signal write.
+
+(define *components* (new Map))
+(define *app-env* #f)
+(define (set-app-env! e) (set! *app-env* e))
+
+(define-record-type comp-node
+  (make-comp-node name args)
+  comp-node?
+  (name comp-node-name)
+  (args comp-node-args))
+
+(define (name->key name) (if (string? name) name (symbol->string name)))
+
+(define (component-cell name)
+  (let ((k (name->key name)))
+    (if (--> *components* (has k))
+        (--> *components* (get k))
+        (let ((c (signal #f)))
+          (--> *components* (set k c))
+          (bind-stub! k)
+          c))))
+
+;; The stub's identity never changes; only the cell contents do. App code
+;; therefore cannot capture a stale definition.
+(define (bind-stub! k)
+  (when *app-env*
+    (--> *app-env* (set k (lambda args (make-comp-node k args))))))
+
+(define (define-component! name proc)
+  (let ((cell (component-cell name)))
+    ((cdr cell) proc)
+    (name->key name)))
+
+(define (component-names) (--> Array (from (--> *components* (keys)))))
+
+;; Forward references: a name used before it is defined gets an empty cell and
+;; a stub, so defining it later fixes the render by the same signal-write path.
+(define (ensure-component! name) (component-cell name) #t)
+
+</script>
+<script type="text/scheme" data-name="render.scm">
+;;; render.scm --- SXML -> DOM, fine grained.
+
+(define-record-type each-node
+  (make-each-node items key-proc render-proc)
+  each-node?
+  (items each-node-items)
+  (key-proc each-node-key-proc)
+  (render-proc each-node-render-proc))
+
+(define (each items key-proc render-proc)
+  (make-each-node items key-proc render-proc))
+
+(define (attrs-block? x)
+  (and (pair? x) (symbol? (car x)) (string=? (symbol->string (car x)) "@")))
+
+;; --- children ---------------------------------------------------------------
+(define (render-child parent child)
+  (cond
+   ((procedure? child) (render-hole parent child))
+   ((comp-node? child) (render-component parent child))
+   ((each-node? child) (render-each parent child))
+   ((string? child) (dom-append parent (dom-text child)))
+   ((number? child) (dom-append parent (dom-text (number->string child))))
+   ((null? child) #f)
+   ((pair? child)
+    (if (symbol? (car child))
+        (render-element parent child)
+        (for-each (lambda (c) (render-child parent c)) child)))
+   ((eq? child #f) #f)
+   (else (dom-append parent (dom-text (->text child))))))
+
+(define (render-element parent sxml)
+  (let* ((tag (car sxml))
+         (rest (cdr sxml))
+         (el (dom-create (symbol->string tag))))
+    (let ((body (if (and (pair? rest) (attrs-block? (car rest)))
+                    (begin (apply-attrs! el (cdr (car rest))) (cdr rest))
+                    rest)))
+      (for-each (lambda (c) (render-child el c)) body))
+    (dom-append parent el)
+    el))
+
+(define (apply-attrs! el attrs)
+  (for-each
+   (lambda (a)
+     (let* ((name (symbol->string (car a)))
+            (value (if (pair? (cdr a)) (car (cdr a)) (cdr a))))
+       (if (and (>= (string-length name) 3)
+                (string=? (substring name 0 3) "on-"))
+           (dom-on! el (substring name 3 (string-length name)) value)
+           (if (procedure? value)
+               (effect (lambda () (dom-set-attr! el name (->text (value)))))
+               (dom-set-attr! el name (->text value))))))
+   attrs))
+
+;; A bare procedure in child position is a reactive hole: its own effect
+;; writing into its own text node.
+(define (render-hole parent thunk)
+  (let ((tn (dom-text "")))
+    (dom-append parent tn)
+    (effect (lambda () (dom-set-text! tn (->text (thunk)))))
+    tn))
+
+;; --- components -------------------------------------------------------------
+;; Reading the cell subscribes this effect, so a redefinition re-renders just
+;; this subtree; cleanup removes the nodes the previous definition made.
+(define (render-component parent cn)
+  (let ((marker (dom-text "")))
+    (dom-append parent marker)
+    (effect
+     (lambda ()
+       (let* ((cell (component-cell (comp-node-name cn)))
+              (proc ((car cell)))
+              (frag (dom-fragment)))
+         (if proc
+             (render-child frag (apply proc (comp-node-args cn)))
+             (render-child frag (string-append "[ " (comp-node-name cn)
+                                               " is not defined ]")))
+         (let ((nodes (dom-children-array frag))
+               (p (dom-parent marker)))
+           (dom-insert-before p frag marker)
+           (on-cleanup! (lambda () (dom-remove-nodes! nodes)))))))
+    marker))
+
+;; --- keyed lists ------------------------------------------------------------
+;; Reconcile by key: create new keys, dispose missing ones, move survivors.
+;; Never rebuild the list.
+(define (render-each parent en)
+  (let ((marker (dom-text ""))
+        (rows '()))               ; list of (key nodes owner)
+    (dom-append parent marker)
+    ;; rows outlive each re-run, so they are disposed here, not by the effect
+    (on-cleanup! (lambda ()
+                   (for-each (lambda (row)
+                               (clean-node (car (cdr (cdr row))))
+                               (dom-remove-nodes! (car (cdr row))))
+                             rows)
+                   (set! rows '())))
+    (effect
+     (lambda ()
+       (let* ((items ((each-node-items en)))
+              (p (dom-parent marker))
+              (old rows)
+              (new '()))
+         (for-each
+          (lambda (item)
+            (let* ((k (store-key ((each-node-key-proc en) item)))
+                   (hit (assoc k old)))
+              (if hit
+                  (set! new (cons hit new))
+                  (let* ((frag (dom-fragment))
+                         (owner (detached-root
+                                 (lambda (owner)
+                                   (render-child frag
+                                                 ((each-node-render-proc en) item))
+                                   owner))))
+                    (set! new (cons (list k (dom-children-array frag) owner)
+                                    new))))))
+          items)
+         (set! new (reverse new))
+         ;; dispose rows whose key vanished
+         (for-each
+          (lambda (row)
+            (unless (assoc (car row) new)
+              (clean-node (car (cdr (cdr row))))
+              (dom-remove-nodes! (car (cdr row)))))
+          old)
+         ;; place every surviving row in order; moving is idempotent
+         (for-each
+          (lambda (row)
+            (dom-insert-nodes-before! p (car (cdr row)) marker))
+          new)
+         (set! rows new))))
+    marker))
+
+;; --- mounting ---------------------------------------------------------------
+;; Called once at startup, before any app code exists. The forward-reference
+;; path supplies a placeholder until the buffer defines `main`.
+(define *root-node* #f)
+
+(define (mount! root-el)
+  (dom-clear! root-el)
+  (set! *root-node*
+        (root (lambda (owner)
+                (render-child root-el (make-comp-node "main" '()))
+                owner)))
+  *root-node*)
+
+;; --- inspector --------------------------------------------------------------
+;; The owner tree is already the live instance hierarchy. Render it directly
+;; rather than keeping a parallel scene graph.
+
+(define (node-label n)
+  (string-append
+   (cond ((= (node-kind n) KIND-MEMO) "memo")
+         ((= (node-kind n) KIND-EFFECT) "effect")
+         (else "signal"))
+   "  <- " (number->string (av-len (node-sources n))) " src"
+   (if (node-err n) (string-append "   ! " (node-err n)) "")))
+
+(define (spaces n)
+  (let loop ((i 0) (s ""))
+    (if (>= i n) s (loop (+ i 1) (string-append s " ")))))
+
+(define (inspect-text)
+  (if (not *root-node*)
+      "not mounted"
+      (let ((out ""))
+        (let walk ((n *root-node*) (depth 0))
+          (set! out (string-append out (spaces (* depth 2))
+                                   (if (= depth 0) "" "- ")
+                                   (node-label n) "\n"))
+          (let ((kids (node-children n)))
+            (let loop ((i 0))
+              (when (< i (av-len kids))
+                (walk (av-ref kids i) (+ depth 1))
+                (loop (+ i 1))))))
+        out)))
+
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/lips@1.0.0-beta.20/dist/lips.min.js"></script>
+<script>
+(function () {
+  var editor   = document.getElementById('editor');
+  var preview  = document.getElementById('preview');
+  var statusEl = document.getElementById('status');
+  var pulse    = document.getElementById('pulse');
+  var treeEl   = document.getElementById('tree');
+  var replOut  = document.getElementById('replout');
+  var replIn   = document.getElementById('replin');
+
+  editor.value = "(define-component! 'main\n  (lambda ()\n    `(div \"hello\")))\n";
+
+  function say(msg, kind) {
+    statusEl.textContent = msg;
+    statusEl.className = kind || '';
+  }
+  function flash() {
+    pulse.classList.add('live');
+    setTimeout(function () { pulse.classList.remove('live'); }, 220);
+  }
+
+  // ---- DOM shim -----------------------------------------------------------
+  // LIPS strings are boxed objects, so every string crossing into the DOM is
+  // coerced here. This is the only host-specific surface.
+  var S = function (x) { return (x === null || x === undefined) ? '' : String(x); };
+  var shim = {
+    'js-create':        function (t) { return document.createElement(S(t)); },
+    'js-text':          function (s) { return document.createTextNode(S(s)); },
+    'js-fragment':      function () { return document.createDocumentFragment(); },
+    'js-append':        function (p, c) { p.appendChild(c); return c; },
+    'js-insert-before': function (p, n, r) { p.insertBefore(n, r); return n; },
+    'js-parent':        function (n) { return n.parentNode; },
+    'js-set-text':      function (n, s) { n.textContent = S(s); return n; },
+    'js-set-attr':      function (n, k, v) { n.setAttribute(S(k), S(v)); return n; },
+    'js-on':            function (n, ev, h) { n.addEventListener(S(ev), h); return n; },
+    'js-clear':         function (n) { while (n.firstChild) n.removeChild(n.firstChild); return n; },
+    'js-children':      function (n) { return Array.from(n.childNodes); },
+    'js-remove-nodes':  function (a) { for (var i = 0; i < a.length; i++) if (a[i].parentNode) a[i].parentNode.removeChild(a[i]); },
+    'js-insert-nodes':  function (p, a, r) { for (var i = 0; i < a.length; i++) p.insertBefore(a[i], r); },
+    // Synchronous try/catch. LIPS 'guard' compiles to 'try', which always
+    // returns a Promise and would make propagation asynchronous.
+    'js-try':           function (thunk, onError) { try { return thunk(); } catch (e) { return onError(e); } },
+    'js-error-message': function (e) { return S(e && e.message ? e.message : e); }
+  };
+
+  var appEnv = null;
+  var sources = {};   // component name -> source text, for Dump
+
+  function evalOne(form) { return lips.exec(form, { env: appEnv, dynamic_env: appEnv }); }
+
+  function evalText(text, record) {
+    return lips.parse(text, appEnv).then(function (forms) {
+      var chain = Promise.resolve([]);
+      forms.forEach(function (form) {
+        chain = chain.then(function (acc) {
+          if (record) {
+            var src = String(form);
+            var m = src.match(/^\(define-component!\s+'([^\s)]+)/);
+            if (m) sources[m[1]] = src;
+          }
+          return evalOne(form).then(function (r) { return acc.concat([r]); });
+        });
+      });
+      return chain;
+    });
+  }
+
+  // ---- boot ---------------------------------------------------------------
+  // Explicit ordering: framework source, then the app environment, then the
+  // mount, then the controls.
+  lips.bootstrap().then(function () {
+    appEnv = lips.env.inherit('app', shim);
+    var blocks = Array.prototype.slice.call(
+      document.querySelectorAll('script[type="text/scheme"]'));
+    return blocks.reduce(function (p, b) {
+      return p.then(function () {
+        return lips.exec(b.textContent, { env: appEnv, dynamic_env: appEnv });
+      });
+    }, Promise.resolve());
+  }).then(function () {
+    return lips.exec('(set-app-env! (current-environment))', { env: appEnv, dynamic_env: appEnv });
+  }).then(function () {
+    appEnv.set('preview-root', preview);
+    return lips.exec('(mount! preview-root)', { env: appEnv, dynamic_env: appEnv });
+  }).then(function () {
+    say('Ready. Edit main, then Register.', 'ok');
+    return register();
+  }).catch(function (e) {
+    say('Boot failed: ' + (e && e.message ? e.message : e), 'err');
+    if (window.console) console.error(e);
+  });
+
+  // ---- controls -----------------------------------------------------------
+  function register() {
+    return evalText(editor.value, true).then(function () {
+      say('Registered ' + Object.keys(sources).length + ' component(s).', 'ok');
+      flash();
+      refreshTree();
+    }).catch(function (e) {
+      say(e && e.message ? e.message : String(e), 'err');
+      if (window.console) console.error(e);
+    });
+  }
+
+  document.getElementById('register').addEventListener('click', register);
+
+  editor.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); register(); }
+  });
+
+  document.getElementById('dump').addEventListener('click', function () {
+    var names = Object.keys(sources);
+    if (!names.length) { say('Nothing registered yet.', 'err'); return; }
+    editor.value = names.map(function (n) { return sources[n]; }).join('\n\n') + '\n';
+    editor.focus();
+    say('Dumped ' + names.length + ' definition(s) into the editor.', 'ok');
+  });
+
+  function refreshTree() {
+    return lips.exec('(inspect-text)', { env: appEnv, dynamic_env: appEnv })
+      .then(function (r) {
+        var txt = String(r[r.length - 1] || '').trim();
+        treeEl.textContent = txt || 'empty';
+      })
+      .catch(function (e) { treeEl.textContent = String(e && e.message || e); });
+  }
+  // ---- inspector tabs -----------------------------------------------------
+  var tabTree  = document.getElementById('tab-tree');
+  var tabRepl  = document.getElementById('tab-repl');
+  var treePane = document.getElementById('inspector');
+  var replPane = document.getElementById('replpane');
+
+  document.getElementById('refresh').addEventListener('click', function () {
+    if (replPane.classList.contains('hidden')) refreshTree(); else replIn.focus();
+  });
+  function showTab(which) {
+    var isTree = which === 'tree';
+    tabTree.classList.toggle('on', isTree);
+    tabRepl.classList.toggle('on', !isTree);
+    treePane.classList.toggle('hidden', !isTree);
+    replPane.classList.toggle('hidden', isTree);
+    if (!isTree) replIn.focus();
+  }
+  tabTree.addEventListener('click', function () { showTab('tree'); });
+  tabRepl.addEventListener('click', function () { showTab('repl'); });
+
+  // ---- repl ---------------------------------------------------------------
+  function print(cls, text) {
+    var line = document.createElement('div');
+    line.className = cls;
+    line.textContent = text;
+    replOut.appendChild(line);
+    replOut.parentNode.scrollTop = replOut.parentNode.scrollHeight;
+  }
+  replIn.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    var src = replIn.value.trim();
+    if (!src) return;
+    replIn.value = '';
+    print('in', '> ' + src);
+    evalText(src, true).then(function (results) {
+      var last = results[results.length - 1];
+      print('out', last === undefined ? '#void' : String(last));
+      refreshTree();
+    }).catch(function (err) {
+      print('bad', String(err && err.message ? err.message : err));
+    });
+  });
+})();
+</script>
+</body>
+</html>
