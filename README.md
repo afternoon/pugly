@@ -1,4 +1,4 @@
-# Live Scheme App Builder — Prototype Spec
+# Pugly
 
 ## Goal
 
